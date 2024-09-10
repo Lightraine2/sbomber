@@ -1,6 +1,8 @@
 import sys
 import os
 import argparse
+import json
+import csv
 from github import GitHubAPI
 from parsing.java import JavaParser
 from parsing.python import PythonParser
@@ -9,8 +11,9 @@ from parsing.javascript import JavaScriptParser
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Analyze dependencies of a GitHub repository")
     parser.add_argument("repo_url", help="URL of the GitHub repository to analyze")
-    parser.add_argument("-o", "--output", choices=["console", "json", "csv"], default="console", help="Output format")
+    parser.add_argument("-o", "--output", choices=["console", "json", "csv", "cyclonedx"], default="console", help="Output format")
     parser.add_argument("-v", "--verbose", action="store_true", help="Increase output verbosity")
+    parser.add_argument("--internal-packages", nargs='+', default=None, help="List of internal package names")
     return parser.parse_args()
 
 def get_parser(language):
@@ -18,7 +21,7 @@ def get_parser(language):
         return JavaParser()
     elif language.lower() == 'python':
         return PythonParser()
-    elif language.lower() == 'javascript' or language.lower() == 'typescript' :
+    elif language.lower() == 'javascript' or language.lower() == 'typescript':
         return JavaScriptParser()
     else:
         raise ValueError(f"Unsupported language: {language}")
@@ -39,6 +42,9 @@ def main(repo_url):
         print(f"Detected language: {language}")
 
         parser = get_parser(language)
+        
+        if isinstance(parser, JavaParser) and args.internal_packages:
+            parser.set_internal_packages(args.internal_packages)
 
         if isinstance(parser, JavaParser):
             gradle_file = github_api.get_dependency_file(repo_url, parser.get_dependency_file_name())
@@ -57,14 +63,17 @@ def main(repo_url):
             for dep in dependencies:
                 print(f"Name: {dep.name}, Version: {dep.version}, License: {dep.license}")
         elif args.output == "json":
-            import json
             print(json.dumps([dep.__dict__ for dep in dependencies], indent=2))
         elif args.output == "csv":
-            import csv
             writer = csv.writer(sys.stdout)
             writer.writerow(["Name", "Version", "License"])
             for dep in dependencies:
                 writer.writerow([dep.name, dep.version, dep.license])
+        elif args.output == "cyclonedx":
+            if isinstance(parser, JavaScriptParser):
+                print(parser.generate_cyclonedx_sbom(repo_info, dependencies))
+            else:
+                print("CycloneDX SBOM generation is currently only supported for JavaScript projects.")
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")

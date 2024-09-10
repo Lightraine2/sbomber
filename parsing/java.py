@@ -6,10 +6,11 @@ from parsing.base import BaseParser
 from models.dependency import Dependency
 
 class JavaParser(BaseParser):
-    def __init__(self):
+    def __init__(self, internal_packages=None):
         self.gradle_file = "build.gradle"
         self.lockfile = "gradle.lockfile"
         self.maven_search_url = "https://search.maven.org/solrsearch/select"
+        self.internal_packages = internal_packages or []
 
     def get_dependency_file_name(self):
         return self.gradle_file
@@ -21,7 +22,6 @@ class JavaParser(BaseParser):
         else:
             dependencies = self._parse_without_lockfile(file_content, ext_versions)
 
-        # Fetch license information for each dependency
         for dep in dependencies:
             dep.license = self._get_license_info(dep.name, dep.version)
             if "License not specified" in dep.license or "Not found" in dep.license:
@@ -68,15 +68,12 @@ class JavaParser(BaseParser):
 
                 if version:
                     if version.startswith('$'):
-                        # Handle variable reference
-                        var_name = version[1:].lower()  # Remove '$' and convert to lowercase
+                        var_name = version[1:].lower()  
                         version = ext_versions.get(var_name, 'Unknown')
                     elif version.startswith('${') and version.endswith('}'):
-                        # Handle more complex variable references like ${foo.bar}
-                        var_name = version[2:-1].lower()  # Remove '${' and '}' and convert to lowercase
+                        var_name = version[2:-1].lower()
                         version = ext_versions.get(var_name, 'Unknown')
                 else:
-                    # Try to find version in ext_versions
                     var_name = artifact_id.lower()
                     version = ext_versions.get(var_name, 'Unknown')
 
@@ -101,9 +98,8 @@ class JavaParser(BaseParser):
 
     @lru_cache(maxsize=100)
     def _get_license_info(self, dependency_name, version):
-        # Check if it's a Chainalysis package
-        if 'chainalysis' in dependency_name.lower():
-            return 'Chainalysis'
+        if any(internal_name.lower() in dependency_name.lower() for internal_name in self.internal_packages):
+            return 'Internal'
 
         group_id, artifact_id = dependency_name.split(':')
         
@@ -120,12 +116,8 @@ class JavaParser(BaseParser):
             
             if data['response']['docs']:
                 doc = data['response']['docs'][0]
-                
-                # Log the entire object found in the Maven repo
                 print(f"Maven Central data for {dependency_name}:")
                 print(json.dumps(doc, indent=2))
-                
-                # Extract license information
                 license = doc.get('license', [])
                 if license:
                     return ', '.join(license)
@@ -151,3 +143,11 @@ class JavaParser(BaseParser):
 
     def get_lockfile_name(self):
         return self.lockfile
+
+    def set_internal_packages(self, internal_packages):
+        """
+        Update the list of internal package names.
+        
+        :param internal_packages: List of strings representing internal package names
+        """
+        self.internal_packages = internal_packages
