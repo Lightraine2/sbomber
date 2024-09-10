@@ -79,3 +79,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 MIT
+
+## TODO
+
+Add CycloneDX SBOM support for Python and Java projects 
+
+Add Maven build management parsing
+
+Add Python Poetry build management parsing
